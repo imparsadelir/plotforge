@@ -1,6 +1,14 @@
 import sys
 import numpy as np
-from PySide6.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget , QFileDialog , QPushButton
+from PySide6.QtWidgets import(
+    QApplication,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget ,
+    QFileDialog , 
+    QPushButton, 
+    QComboBox
+)
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 from core.io.readers import read_data_file
@@ -17,6 +25,11 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("PlotForge — v0.0")
         self.resize(900, 600)
+        self.df = None
+        self.x_combo = QComboBox()
+        self.x_combo.currentTextChanged.connect(self.plot_data)
+        
+        
 
         self.canvas = PlotCanvas()
 
@@ -28,6 +41,7 @@ class MainWindow(QMainWindow):
         button.clicked.connect(self.open_file)
         layout.addWidget(self.canvas)
         layout.addWidget(button)
+        layout.addWidget(self.x_combo)
         
     def open_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -40,22 +54,30 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        df = read_data_file(file_path)
+        self.df = read_data_file(file_path)
+
+        self.x_combo.clear()
+        self.x_combo.addItems(list(self.df.columns))
+
+        self.plot_data()
+
+    def plot_data(self):
+        if self.df is None or self.df.empty:
+            return
 
         self.canvas.axes.clear()
 
-        columns = list(df.columns)
-        x_column = columns[0]
-        y_columns = columns[1:]
+        columns = list(self.df.columns)
+        x_column = self.x_combo.currentText()
+        y_columns = [c for c in columns if c != x_column]
 
         for col in y_columns:
-            self.canvas.axes.plot(df[x_column], df[col], label=col)
+            self.canvas.axes.plot(self.df[x_column], self.df[col], label=col)
 
         self.canvas.axes.set_xlabel(x_column)
         self.canvas.axes.legend()
-        self.canvas.axes.grid(alpha=0.9)
+        self.canvas.axes.grid(alpha=0.3)
         self.canvas.draw()
-        
 
 
 if __name__ == "__main__":
