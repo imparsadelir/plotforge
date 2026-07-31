@@ -1,21 +1,21 @@
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
 from matplotlib.figure import Figure
 
+from gui.style import apply_chart_style
+
+apply_chart_style()
+
 
 class PlotCanvas(FigureCanvasQTAgg):
     """A Matplotlib figure that behaves like a normal Qt widget."""
 
     def __init__(self):
-        self.figure = Figure(figsize=(6, 4), dpi=100)
+        self.figure = Figure(figsize=(7, 4.5), dpi=100)
         self.axes = self.figure.add_subplot(111)
         super().__init__(self.figure)
 
     def reset(self, rows=1, cols=1):
-        """Clear the figure and create a fresh grid of axes.
-
-        Returns the list of created axes. The first one is also stored
-        as self.axes so the rest of the application keeps working.
-        """
+        """Clear the figure and create a fresh grid of axes."""
         self.figure.clear()
 
         created = []
