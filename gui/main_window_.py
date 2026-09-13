@@ -229,27 +229,6 @@ def mark_endpoints(axes, which):
         axes.yaxis.set_major_formatter(formatter)
 
 
-def install_coordinate_readout(axes, x_name="x", y_name="y"):
-    """Take charge of the cursor read-out in the toolbar.
-
-    By default Matplotlib asks the axis formatter to describe the cursor
-    position. A formatter that only knows a fixed set of tick labels
-    returns nothing for values in between, which leaves the toolbar
-    showing an empty pair of brackets. Defining the read-out here removes
-    that dependency completely.
-    """
-
-    def describe(x, y):
-        if x is None or y is None:
-            return ""
-        try:
-            return f"{x_name} = {format_tick(float(x))}    {y_name} = {format_tick(float(y))}"
-        except (TypeError, ValueError):
-            return ""
-
-    axes.format_coord = describe
-
-
 def grid_for(count):
     """Choose a pleasant rows x cols arrangement for a number of panels."""
     if count <= 1:
@@ -1365,12 +1344,6 @@ class MainWindow(QMainWindow):
             self.add_legend(axes)
 
         self.apply_axis_settings(axes, x_column, y_low, y_high)
-
-        install_coordinate_readout(
-            axes,
-            self.x_label_edit.text().strip() or str(x_column),
-            self.build_y_label(plotted_names) or "y",
-        )
 
     def show_empty_canvas(self, message):
         """Draw a friendly placeholder instead of an empty grid."""

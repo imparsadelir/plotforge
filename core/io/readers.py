@@ -1,3 +1,13 @@
+"""Robust readers for tabular data files.
+
+Handles real-world files where:
+  * the header is not on the first row
+  * blank or title rows appear above the data
+  * instruments append unnamed annotation columns beside the data
+  * the delimiter is a comma, tab, semicolon, pipe or plain whitespace
+  * column names are duplicated or missing
+"""
+
 import csv
 import io
 from pathlib import Path

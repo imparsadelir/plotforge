@@ -4,7 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor, QGuiApplication
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QMainWindow,
     QVBoxLayout,
@@ -28,8 +28,7 @@ from PySide6.QtWidgets import (
     QTextEdit,
 )
 from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
-from matplotlib.colors import to_hex
-from matplotlib.ticker import FuncFormatter, MultipleLocator
+from matplotlib.ticker import MultipleLocator
 
 from core.analysis.clustering import ClusteringError, cluster_curves, describe
 from core.analysis.peaks import detect_peaks, smooth
@@ -52,14 +51,6 @@ LEGEND_POSITIONS = [
     "Lower right",
     "Outside",
 ]
-
-CHART_LINE = "Line"
-CHART_SCATTER = "Scatter (points)"
-CHART_LINE_MARKERS = "Line with markers"
-CHART_BAR = "Bar"
-CHART_TYPES = [CHART_LINE, CHART_SCATTER, CHART_LINE_MARKERS, CHART_BAR]
-
-NO_ERROR_COLUMN = "None"
 
 LINE_STYLES = {
     "Solid": "-",
@@ -161,25 +152,6 @@ class ColorPicker(QPushButton):
         return menu
 
 
-def parse_number_list(text):
-    """Read a list of numbers typed as "1720, 2930 3400" into floats.
-
-    Anything that is not a number is ignored, so a stray character does
-    not stop the whole list from working.
-    """
-    if not text:
-        return []
-
-    cleaned = text.replace(",", " ").replace(";", " ")
-    values = []
-    for piece in cleaned.split():
-        try:
-            values.append(float(piece))
-        except ValueError:
-            continue
-    return values
-
-
 def parse_number(text):
     """Convert text to a float. Return None if empty or invalid."""
     text = text.strip()
@@ -215,39 +187,14 @@ def mark_endpoints(axes, which):
     gap = (upper - lower) * 0.06
     inner = [t for t in current if lower + gap < t < upper - gap]
     ticks = [lower] + list(inner) + [upper]
-
-    # A FuncFormatter is used instead of set_xticklabels, because fixed
-    # labels also stop the toolbar from reporting the cursor position:
-    # the axis would only know how to format those exact values.
-    formatter = FuncFormatter(lambda value, _position: format_tick(value))
+    labels = [format_tick(t) for t in ticks]
 
     if which == "x":
         axes.set_xticks(ticks)
-        axes.xaxis.set_major_formatter(formatter)
+        axes.set_xticklabels(labels)
     else:
         axes.set_yticks(ticks)
-        axes.yaxis.set_major_formatter(formatter)
-
-
-def install_coordinate_readout(axes, x_name="x", y_name="y"):
-    """Take charge of the cursor read-out in the toolbar.
-
-    By default Matplotlib asks the axis formatter to describe the cursor
-    position. A formatter that only knows a fixed set of tick labels
-    returns nothing for values in between, which leaves the toolbar
-    showing an empty pair of brackets. Defining the read-out here removes
-    that dependency completely.
-    """
-
-    def describe(x, y):
-        if x is None or y is None:
-            return ""
-        try:
-            return f"{x_name} = {format_tick(float(x))}    {y_name} = {format_tick(float(y))}"
-        except (TypeError, ValueError):
-            return ""
-
-    axes.format_coord = describe
+        axes.set_yticklabels(labels)
 
 
 def grid_for(count):
@@ -271,15 +218,6 @@ def make_number_field(placeholder):
     return field
 
 
-def scrollable(widget):
-    """Wrap a panel so it stays usable on a short screen."""
-    area = QScrollArea()
-    area.setWidget(widget)
-    area.setWidgetResizable(True)
-    area.setFrameShape(QScrollArea.Shape.NoFrame)
-    return area
-
-
 def section_label(text):
     """A small muted caption used above groups of controls."""
     label = QLabel(text.upper())
@@ -291,7 +229,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PlotForge")
-        self.fit_to_screen(1280, 820)
+        self.resize(1280, 820)
 
         self.datasets = {}
         self.series_rows = []
@@ -320,27 +258,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("No data loaded — start by adding a file.")
         self.on_auto_range_changed()
 
-    def fit_to_screen(self, preferred_width, preferred_height):
-        """Open at a sensible size that always fits the display.
-
-        A fixed size larger than the screen would push part of the window
-        under the edge of the monitor, where it cannot be reached.
-        """
-        screen = QGuiApplication.primaryScreen()
-        if screen is None:
-            self.resize(preferred_width, preferred_height)
-            return
-
-        available = screen.availableGeometry()
-        width = min(preferred_width, int(available.width() * 0.95))
-        height = min(preferred_height, int(available.height() * 0.92))
-
-        self.resize(width, height)
-        self.move(
-            available.left() + (available.width() - width) // 2,
-            available.top() + max(0, (available.height() - height) // 2),
-        )
-
     # ---------- interface construction ----------
 
     def build_sidebar(self):
@@ -365,9 +282,9 @@ class MainWindow(QMainWindow):
 
         tabs = QTabWidget()
         tabs.addTab(self.build_series_tab(), "Series")
-        tabs.addTab(scrollable(self.build_axes_tab()), "Axes")
-        tabs.addTab(scrollable(self.build_labels_tab()), "Labels")
-        tabs.addTab(scrollable(self.build_analysis_tab()), "Analysis")
+        tabs.addTab(self.build_axes_tab(), "Axes")
+        tabs.addTab(self.build_labels_tab(), "Labels")
+        tabs.addTab(self.build_analysis_tab(), "Analysis")
 
         self.dpi_combo = QComboBox()
         self.dpi_combo.setEditable(True)
@@ -395,7 +312,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(tabs, stretch=1)
         layout.addLayout(export_row)
 
-        sidebar.setMinimumWidth(300)
+        sidebar.setMinimumWidth(350)
         sidebar.setMaximumWidth(480)
         return sidebar
 
@@ -426,13 +343,6 @@ class MainWindow(QMainWindow):
         self.mode_combo = QComboBox()
         self.mode_combo.addItems(MODES)
         self.mode_combo.currentTextChanged.connect(self.plot_data)
-
-        self.chart_type_combo = QComboBox()
-        self.chart_type_combo.addItems(CHART_TYPES)
-        self.chart_type_combo.currentTextChanged.connect(self.plot_data)
-
-        self.error_combo = QComboBox()
-        self.error_combo.currentTextChanged.connect(self.on_error_column_changed)
 
         self.style_combo = QComboBox()
         self.style_combo.addItems(list(LINE_STYLES.keys()))
@@ -491,10 +401,6 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.x_combo)
         layout.addWidget(section_label("Layout"))
         layout.addWidget(self.mode_combo)
-        layout.addWidget(section_label("Chart type"))
-        layout.addWidget(self.chart_type_combo)
-        layout.addWidget(section_label("Error bars from column"))
-        layout.addWidget(self.error_combo)
         layout.addWidget(section_label("Line style and width"))
         layout.addLayout(line_row)
         layout.addWidget(section_label("Range"))
@@ -578,18 +484,6 @@ class MainWindow(QMainWindow):
         self.peak_direction.addItems(["Automatic", "Upward", "Downward"])
         self.peak_direction.currentTextChanged.connect(self.plot_data)
 
-        self.auto_peaks_check = QCheckBox("Find peaks automatically")
-        self.auto_peaks_check.setChecked(True)
-        self.auto_peaks_check.toggled.connect(self.plot_data)
-
-        self.manual_peaks_edit = QLineEdit()
-        self.manual_peaks_edit.setPlaceholderText("add points at x: 1720, 2930")
-        self.manual_peaks_edit.editingFinished.connect(self.plot_data)
-
-        self.ignore_peaks_edit = QLineEdit()
-        self.ignore_peaks_edit.setPlaceholderText("ignore points near x: 648")
-        self.ignore_peaks_edit.editingFinished.connect(self.plot_data)
-
         self.peak_labels_check = QCheckBox("Write the position of each peak")
         self.peak_labels_check.setChecked(True)
         self.peak_labels_check.toggled.connect(self.plot_data)
@@ -616,7 +510,7 @@ class MainWindow(QMainWindow):
         self.cluster_output.setPlaceholderText(
             "Load four or more curves, then press the button above."
         )
-        self.cluster_output.setMinimumHeight(80)
+        self.cluster_output.setMinimumHeight(140)
 
         peak_row = QHBoxLayout()
         peak_row.addWidget(self.peak_sensitivity, stretch=1)
@@ -633,10 +527,7 @@ class MainWindow(QMainWindow):
         layout.setSpacing(6)
         layout.addWidget(section_label("Peaks"))
         layout.addWidget(self.peaks_check)
-        layout.addWidget(self.auto_peaks_check)
         layout.addLayout(peak_row)
-        layout.addWidget(self.manual_peaks_edit)
-        layout.addWidget(self.ignore_peaks_edit)
         layout.addWidget(self.peak_labels_check)
         layout.addWidget(section_label("Smoothing"))
         layout.addWidget(self.smooth_check)
@@ -660,83 +551,15 @@ class MainWindow(QMainWindow):
 
         return sensitivity, direction
 
-    def nearest_on_curve(self, x_values, y_values, target):
-        """Find the data point closest to a requested x position."""
-        if x_values.size == 0:
-            return None
-
-        index = int(np.argmin(np.abs(x_values - target)))
-        return index, float(x_values[index]), float(y_values[index])
-
-    def collect_peaks(self, x_values, y_values):
-        """Work out which points should be marked on one curve.
-
-        Automatic detection, manual additions and manual removals are
-        combined here, so the drawing code stays simple.
-        """
+    def mark_peaks(self, axes, x_values, y_values, color):
+        """Find the peaks of one curve and draw them."""
         sensitivity, direction = self.peak_settings()
 
-        peak_x = np.array([])
-        peak_y = np.array([])
-        prominences = np.array([])
-        found_direction = "up"
-
-        if self.auto_peaks_check.isChecked():
-            found = detect_peaks(
-                x_values, y_values,
-                sensitivity=sensitivity,
-                direction=direction,
-            )
-            peak_x = found["x"]
-            peak_y = found["y"]
-            prominences = found["prominences"]
-            found_direction = found["direction"]
-        elif direction != "auto":
-            found_direction = direction
-
-        # Remove the automatic peaks the user asked to ignore.
-        ignored = parse_number_list(self.ignore_peaks_edit.text())
-        if ignored and peak_x.size:
-            span = float(np.nanmax(x_values) - np.nanmin(x_values))
-            tolerance = span * 0.02 if span > 0 else 1.0
-
-            keep = np.ones(peak_x.size, dtype=bool)
-            for unwanted in ignored:
-                keep &= np.abs(peak_x - unwanted) > tolerance
-
-            peak_x = peak_x[keep]
-            peak_y = peak_y[keep]
-            if prominences.size == keep.size:
-                prominences = prominences[keep]
-            else:
-                prominences = np.array([])
-
-        # Add the points the user typed in by hand.
-        manual = parse_number_list(self.manual_peaks_edit.text())
-        extra_x, extra_y = [], []
-        for target in manual:
-            point = self.nearest_on_curve(x_values, y_values, target)
-            if point is None:
-                continue
-            _index, px, py = point
-            extra_x.append(px)
-            extra_y.append(py)
-
-        if extra_x:
-            peak_x = np.concatenate([peak_x, np.array(extra_x)])
-            peak_y = np.concatenate([peak_y, np.array(extra_y)])
-            prominences = np.array([])  # mixed sources, ordering no longer valid
-
-        return {
-            "x": peak_x,
-            "y": peak_y,
-            "prominences": prominences,
-            "direction": found_direction,
-        }
-
-    def mark_peaks(self, axes, x_values, y_values, color):
-        """Draw the marked points of one curve."""
-        found = self.collect_peaks(x_values, y_values)
+        found = detect_peaks(
+            x_values, y_values,
+            sensitivity=sensitivity,
+            direction=direction,
+        )
 
         if found["x"].size == 0:
             return 0
@@ -748,7 +571,7 @@ class MainWindow(QMainWindow):
             linestyle="none",
             marker="v" if pointing_up else "^",
             markersize=4.5,
-            color=color if isinstance(color, str) and color else "#1C1E2B",
+            color=color or "#1C1E2B",
             zorder=5,
         )
 
@@ -952,7 +775,6 @@ class MainWindow(QMainWindow):
         self.x_combo.blockSignals(False)
 
         self.refresh_label_options()
-        self.refresh_error_options()
         self.rebuild_series_list()
         self.update_status()
         self.plot_data()
@@ -1055,14 +877,10 @@ class MainWindow(QMainWindow):
         self.update_series_availability()
 
     def update_series_availability(self):
-        """Hide columns that already have another job on the chart."""
+        """Hide the column that is currently used as the horizontal axis."""
         x_column = self.x_combo.currentText()
-        error_column = self.error_combo.currentText()
-        using_errors = bool(error_column) and error_column != NO_ERROR_COLUMN
-
         for row, _checkbox, _name, col, _legend, _picker in self.series_rows:
-            taken = (col == x_column) or (using_errors and col == error_column)
-            row.setVisible(not taken)
+            row.setVisible(col != x_column)
 
     def refresh_label_options(self):
         """Keep the Y-label choices in step with the horizontal axis."""
@@ -1078,36 +896,6 @@ class MainWindow(QMainWindow):
         if previous in options:
             self.y_label_combo.setCurrentText(previous)
         self.y_label_combo.blockSignals(False)
-
-    def refresh_error_options(self):
-        """List the columns that can supply error-bar values."""
-        options = [NO_ERROR_COLUMN] + self.all_columns()
-        previous = self.error_combo.currentText()
-
-        self.error_combo.blockSignals(True)
-        self.error_combo.clear()
-        self.error_combo.addItems(options)
-        if previous in options:
-            self.error_combo.setCurrentText(previous)
-        self.error_combo.blockSignals(False)
-
-    def error_values(self, frame, length):
-        """Return the error column for this dataset, or None."""
-        choice = self.error_combo.currentText()
-        if not choice or choice == NO_ERROR_COLUMN:
-            return None
-        if choice not in frame.columns:
-            return None
-
-        values = np.asarray(frame[choice], dtype=float)
-        if values.size != length:
-            return None
-        return values
-
-    def on_error_column_changed(self):
-        """A column used for error bars is not drawn as a curve of its own."""
-        self.update_series_availability()
-        self.plot_data()
 
     def on_x_changed(self):
         """React to a new horizontal axis choice."""
@@ -1141,14 +929,9 @@ class MainWindow(QMainWindow):
 
     def selected_series(self, x_column):
         """Return the curves to draw as (dataset, column, label, colour)."""
-        error_column = self.error_combo.currentText()
-        using_errors = bool(error_column) and error_column != NO_ERROR_COLUMN
-
         chosen = []
         for _row, checkbox, name, col, legend_edit, _picker in self.series_rows:
             if not checkbox.isChecked() or col == x_column:
-                continue
-            if using_errors and col == error_column:
                 continue
             frame = self.datasets.get(name)
             if frame is None or x_column not in frame.columns:
@@ -1246,73 +1029,6 @@ class MainWindow(QMainWindow):
         elif automatic:
             mark_endpoints(axes, "y")
 
-    def draw_series(
-        self, axes, x_values, y_values, label, color,
-        line_style, line_width, errors, total, index,
-    ):
-        """Draw one curve in the chosen style. Returns the colour used."""
-        chart_type = self.chart_type_combo.currentText()
-
-        if chart_type == CHART_BAR:
-            # Several bar series at the same x would overlap, so each
-            # series is shifted sideways into its own slot.
-            width = self.bar_width(x_values, total)
-            offset = (index - (total - 1) / 2) * width
-            container = axes.bar(
-                x_values + offset, y_values,
-                width=width, label=label, color=color,
-                yerr=errors, capsize=3 if errors is not None else 0,
-            )
-            return to_hex(container.patches[0].get_facecolor())
-
-        if chart_type == CHART_SCATTER:
-            marker_size = 18 if x_values.size > 400 else 34
-            collection = axes.scatter(
-                x_values, y_values,
-                label=label, color=color, s=marker_size, alpha=0.85,
-            )
-            drawn = to_hex(collection.get_facecolor()[0])
-            if errors is not None:
-                axes.errorbar(
-                    x_values, y_values, yerr=errors,
-                    fmt="none", ecolor=drawn, elinewidth=1, capsize=3,
-                )
-            return drawn
-
-        marker = None
-        if chart_type == CHART_LINE_MARKERS:
-            # Markers on thousands of points hide the line itself.
-            marker = "o" if x_values.size <= 150 else None
-
-        if errors is not None:
-            container = axes.errorbar(
-                x_values, y_values, yerr=errors,
-                label=label, color=color,
-                linestyle=line_style, linewidth=line_width,
-                marker=marker, markersize=4,
-                capsize=3, elinewidth=1,
-            )
-            return container.lines[0].get_color()
-
-        line, = axes.plot(
-            x_values, y_values,
-            label=label, color=color,
-            linestyle=line_style, linewidth=line_width,
-            marker=marker, markersize=4,
-        )
-        return line.get_color()
-
-    def bar_width(self, x_values, total):
-        """Pick a bar width that fits the spacing of the data."""
-        if x_values.size < 2:
-            return 0.8
-
-        gaps = np.diff(np.sort(x_values))
-        gaps = gaps[gaps > 0]
-        step = float(np.median(gaps)) if gaps.size else 1.0
-
-        return step * 0.8 / max(total, 1)
-
     def draw_panel(self, axes, items, x_column, title, single_panel, mode):
         """Draw one panel of the chart."""
         plotted_names = []
@@ -1322,7 +1038,7 @@ class MainWindow(QMainWindow):
         line_style = LINE_STYLES.get(self.style_combo.currentText(), "-")
         line_width = parse_number(self.width_combo.currentText()) or 1.8
 
-        for index, (name, col, custom, color) in enumerate(items):
+        for name, col, custom, color in items:
             frame = self.datasets[name]
             values = frame[col]
 
@@ -1331,17 +1047,19 @@ class MainWindow(QMainWindow):
                 values = smooth(values.to_numpy(), window)
 
             label = custom or self.default_label(name, col, mode, single_panel)
-            x_values = np.asarray(frame[x_column], dtype=float)
-            y_values = np.asarray(values, dtype=float)
-            errors = self.error_values(frame, y_values.size)
-
-            drawn_color = self.draw_series(
-                axes, x_values, y_values, label, color,
-                line_style, line_width, errors, len(items), index,
+            line, = axes.plot(
+                frame[x_column],
+                values,
+                label=label,
+                color=color,
+                linestyle=line_style,
+                linewidth=line_width,
             )
 
             if self.peaks_check.isChecked():
-                self.mark_peaks(axes, x_values, y_values, drawn_color)
+                self.mark_peaks(
+                    axes, frame[x_column], values, line.get_color()
+                )
 
             if col not in plotted_names:
                 plotted_names.append(col)
@@ -1365,12 +1083,6 @@ class MainWindow(QMainWindow):
             self.add_legend(axes)
 
         self.apply_axis_settings(axes, x_column, y_low, y_high)
-
-        install_coordinate_readout(
-            axes,
-            self.x_label_edit.text().strip() or str(x_column),
-            self.build_y_label(plotted_names) or "y",
-        )
 
     def show_empty_canvas(self, message):
         """Draw a friendly placeholder instead of an empty grid."""
