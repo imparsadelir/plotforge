@@ -1,0 +1,66 @@
+name: Build Windows app
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build the executable
+        run: >
+          pyinstaller --noconfirm --onefile --windowed
+          --name PlotForge
+          --add-data "demo;demo"
+          --hidden-import matplotlib.backends.backend_qtagg
+          --hidden-import sklearn.utils._typedefs
+          --hidden-import sklearn.utils._heap
+          --hidden-import sklearn.utils._sorting
+          --hidden-import sklearn.utils._vector_sentinel
+          --hidden-import scipy.signal
+          --collect-submodules sklearn
+          --exclude-module PyQt5
+          --exclude-module PyQt6
+          --exclude-module tkinter
+          --exclude-module pytest
+          --exclude-module lxml
+          --exclude-module PySide6.QtQml
+          --exclude-module PySide6.QtQuick
+          --exclude-module PySide6.Qt3DCore
+          main.py
+
+      - name: Upload the executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: PlotForge-windows
+          path: dist/PlotForge.exe
+          retention-days: 30
+
+      - name: Publish a release when a tag is pushed
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PlotForge.exe
+          generate_release_notes: true
